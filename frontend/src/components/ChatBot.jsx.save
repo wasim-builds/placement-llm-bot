@@ -1,0 +1,136 @@
+import { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+
+const API_URL = 'http://localhost:5001/api/chat';
+
+const MODES = {
+  dsa: {
+    label: 'DSA',
+    context:
+      'You are an interviewer for SDE roles. Ask one DSA question at a time, based on arrays, strings, trees, graphs or DP.',
+  },
+  hr: {
+    label: 'HR / Behavioral',
+    context:
+      'You are an HR interviewer. Ask one behavioral question at a time, using STAR-style prompts.',
+  },
+  system: {
+    label: 'System Design',
+    context:
+      'You are a system design interviewer for backend roles. Ask one system design question at a time.',
+  },
+};
+
+export default function ChatBot() {
+  const [mode, setMode] = useState('dsa');
+  const [messages, setMessages] = useState([
+    { from: 'bot', text: 'Hi! Choose a mode and I will start asking you questions.' },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    const newMessages = [...messages, { from: 'user', text: trimmed }];
+    setMessages(newMessages);
+    setInput('');
+    setLoading(true);
+
+    try {
+      // Use mock reply for now
+      // const res = await axios.post(API_URL, {
+      //   message: trimmed,
+      //   context: MODES[mode].context,
+      // });
+      // const reply = res.data.reply;
+
+      const reply = getMockReply(trimmed, mode);
+
+      setMessages([...newMessages, { from: 'bot', text: reply }]);
+    } catch (err) {
+      console.error(err);
+      setMessages([
+        ...newMessages,
+        { from: 'bot', text: 'Error contacting server. Try again later.' },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleModeChange = (newMode) => {
+    if (newMode === mode) return;
+    setMode(newMode);
+    setMessages([
+      {
+        from: 'bot',
+        text: `Switched to ${MODES[newMode].label} mode. I will now ask you ${MODES[newMode].label} questions.`,
+      },
+    ]);
+  };
+
+  return (
+    <div className="chat-wrapper">
+      <div className="mode-bar">
+        {Object.entries(MODES).map(([key, cfg]) => (
+          <button
+            key={key}
+            className={key === mode ? 'mode-btn active' : 'mode-btn'}
+            onClick={() => handleModeChange(key)}
+          >
+            {cfg.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="chat-container">
+        <div className="chat-window">
+          {messages.map((m, i) => (
+            <div key={i} className={`msg ${m.from === 'user' ? 'user' : 'bot'}`}>
+              {m.text}
+            </div>
+          ))}
+          {loading && <div className="msg bot">Thinking...</div>}
+          <div ref={chatEndRef} />
+        </div>
+
+        <form onSubmit={sendMessage} className="chat-input">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your answer or ask for a new question..."
+          />
+          <button type="submit" disabled={loading}>
+            Send
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function getMockReply(message, mode) {
+  if (mode === 'dsa') {
+    return 'DSA Q: Given an array of integers, find the length of the longest subarray with sum equal to K.';
+  }
+  if (mode === 'hr') {
+    return 'HR Q: Tell me about a time you faced a conflict in a team and how you resolved it.';
+  }
+  if (mode === 'system') {
+    return 'System Design Q: Design a URL shortener service like bit.ly. What components and database schema would you use?';
+  }
+  return 'Mock reply.';
+}
+
+
+
+
+
