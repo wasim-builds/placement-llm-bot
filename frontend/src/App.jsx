@@ -1,46 +1,61 @@
-import ChatBot from './components/ChatBot';
+import { Routes, Route } from 'react-router-dom';
 import './App.css';
 
-function App() {
+// Layouts
+import MainLayout from './layouts/MainLayout';
+import AuthLayout from './layouts/AuthLayout';
+
+// Pages
+import LandingPage from './pages/LandingPage';
+import Dashboard from './pages/Dashboard';
+import PreparationHub from './pages/PreparationHub';
+import InterviewRoom from './pages/InterviewRoom';
+import Results from './pages/Results';
+import Settings from './pages/Settings';
+
+// HR Pages
+import RoleSelector from './pages/RoleSelector';
+import HRDashboard from './pages/HRDashboard';
+import JobPostingForm from './pages/JobPostingForm';
+import HRJobsList from './pages/HRJobsList';
+import ApplicationsView from './pages/ApplicationsView';
+
+// Candidate Pages
+import JobListings from './pages/JobListings';
+import JobDetails from './pages/JobDetails';
+import MyApplications from './pages/MyApplications';
+
+export default function App() {
   return (
-    <div className="app-root">
-      <div className="chat-shell">
-        <div className="chat-header">
-          <div>
-            <div className="chat-header-title">Placement Prep LLM Chatbot</div>
-            <div className="chat-header-subtitle">
-              Practise DSA, HR and System Design interviews in one place.
-            </div>
-          </div>
-          <div className="stats-pill">
-            <span>DSA • Practice</span>
-            <span>HR • Behaviour</span>
-            <span>System Design</span>
-          </div>
-        </div>
+    <Routes>
+      {/* Public Routes (No Sidebar) */}
+      <Route element={<AuthLayout />}>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/select-role" element={<RoleSelector />} />
+      </Route>
 
-        <div>
-          <ChatBot />
-        </div>
+      {/* Protected Routes (With Sidebar & Navbar) */}
+      <Route element={<MainLayout />}>
+        {/* Original Routes */}
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/preparation" element={<PreparationHub />} />
+        <Route path="/interview" element={<InterviewRoom />} />
+        <Route path="/results/:sessionId?" element={<Results />} />
+        <Route path="/settings" element={<Settings />} />
 
-        <aside>
-          <h3 style={{ fontSize: 14, marginTop: 6 }}>Session Tips</h3>
-          <ul style={{ fontSize: 12, color: '#9ca3af', paddingLeft: 18 }}>
-            <li>Answer like in a real interview; think aloud.</li>
-            <li>After answering, ask “Give me feedback on my answer”.</li>
-            <li>Switch modes to cover DSA, HR and System Design daily.</li>
-          </ul>
-          <h3 style={{ fontSize: 14, marginTop: 16 }}>Suggested Prompts</h3>
-          <ul style={{ fontSize: 12, color: '#9ca3af', paddingLeft: 18 }}>
-            <li>“Give me an easy array question.”</li>
-            <li>“Ask a medium DP question.”</li>
-            <li>“Ask 3 rapid-fire HR questions.”</li>
-            <li>“Give me a small system design warm-up.”</li>
-          </ul>
-        </aside>
-      </div>
-    </div>
+        {/* HR Routes */}
+        <Route path="/hr/dashboard" element={<HRDashboard />} />
+        <Route path="/hr/post-job" element={<JobPostingForm />} />
+        <Route path="/hr/jobs" element={<HRJobsList />} />
+        <Route path="/hr/jobs/:jobId/edit" element={<JobPostingForm />} />
+        <Route path="/hr/jobs/:jobId/applications" element={<ApplicationsView />} />
+
+        {/* Candidate Routes */}
+        <Route path="/jobs" element={<JobListings />} />
+        <Route path="/jobs/:jobId" element={<JobDetails />} />
+        <Route path="/my-applications" element={<MyApplications />} />
+        <Route path="/interview/:jobId/:applicationId" element={<InterviewRoom />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;

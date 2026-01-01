@@ -8,16 +8,19 @@ export default function ChatBot() {
   const [sessionId, setSessionId] = useState('');
   const [summary, setSummary] = useState('');
   const [messages, setMessages] = useState([
-    { from: 'bot', text: 'Upload your resume (PDF), then start the voice interview.' },
+    { from: 'bot', text: '👋 Welcome! Upload your resume (PDF) to start your AI-powered video interview.' },
   ]);
   const [input, setInput] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [webcamEnabled, setWebcamEnabled] = useState(false);
   const chatEndRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const chunksRef = useRef([]);
+  const webcamRef = useRef(null);
+  const webcamStreamRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -55,7 +58,7 @@ export default function ChatBot() {
       const firstQuestion = res.data.question;
       setCurrentQuestion(firstQuestion);
       setMessages([
-        { from: 'bot', text: 'Resume processed. Summary ready. Starting interview.' },
+        { from: 'bot', text: '✅ Resume processed successfully!' },
         { from: 'bot', text: firstQuestion },
       ]);
     } catch (err) {
@@ -82,13 +85,13 @@ export default function ChatBot() {
       setCurrentQuestion(nextQ);
       setMessages([...newMessages, { from: 'bot', text: nextQ }]);
       if (res.data.done) {
-        setMessages((prev) => [...prev, { from: 'bot', text: 'Interview ended.' }]);
+        setMessages((prev) => [...prev, { from: 'bot', text: '🎉 Interview completed!' }]);
       }
     } catch (err) {
       console.error(err);
       setMessages([
         ...newMessages,
-        { from: 'bot', text: 'Error contacting server. Try again later.' },
+        { from: 'bot', text: '❌ Error contacting server. Try again later.' },
       ]);
     } finally {
       setLoading(false);
@@ -97,44 +100,15 @@ export default function ChatBot() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!sessionId) return alert('Upload resume and start the interview first.');
     sendAnswer(input);
-  };
-
-  const sendAudioAnswer = async (blob) => {
-    if (!sessionId) return alert('Upload resume and start the interview first.');
-    const formData = new FormData();
-    formData.append('sessionId', sessionId);
-    formData.append('audio', blob, 'answer.webm');
-
-    setLoading(true);
-    try {
-      const res = await axios.post(`${API_BASE}/answer-audio`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const transcript = res.data.transcript || '[No transcript]';
-      const nextQ = res.data.question;
-      setCurrentQuestion(nextQ);
-      setMessages((prev) => [...prev, { from: 'user', text: transcript }, { from: 'bot', text: nextQ }]);
-      if (res.data.done) {
-        setMessages((prev) => [...prev, { from: 'bot', text: 'Interview ended.' }]);
-      }
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [
-        ...prev,
-        { from: 'bot', text: 'Error transcribing audio. Try again or type your answer.' },
-      ]);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const startRecording = async () => {
     try {
-      if (!sessionId) return alert('Upload resume and start the interview first.');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -143,19 +117,15 @@ export default function ChatBot() {
 
       recorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        chunksRef.current = [];
-        await sendAudioAnswer(blob);
-        stream.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
+        await submitAudio(blob);
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       recorder.start();
-      mediaRecorderRef.current = recorder;
-      mediaStreamRef.current = stream;
       setRecording(true);
     } catch (err) {
-      console.error(err);
-      alert('Could not start recording. Check mic permissions.');
+      console.error('Microphone error:', err);
+      alert('Could not access microphone. Please check permissions.');
     }
   };
 
@@ -165,67 +135,231 @@ export default function ChatBot() {
     setRecording(false);
   };
 
+  const submitAudio = async (blob) => {
+    if (!sessionId) return;
+    const formData = new FormData();
+    formData.append('audio', blob, 'answer.webm');
+    formData.append('sessionId', sessionId);
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/answer-audio`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const transcript = res.data.transcript || '(transcription unavailable)';
+      const nextQ = res.data.question;
+      setCurrentQuestion(nextQ);
+      setMessages((prev) => [
+        ...prev,
+        { from: 'user', text: `🎤 ${transcript}` },
+        { from: 'bot', text: nextQ },
+      ]);
+      if (res.data.done) {
+        setMessages((prev) => [...prev, { from: 'bot', text: '🎉 Interview completed!' }]);
+      }
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [
+        ...prev,
+        { from: 'bot', text: '❌ Error processing audio. Try again.' },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleWebcam = async () => {
+    if (webcamEnabled) {
+      if (webcamStreamRef.current) {
+        webcamStreamRef.current.getTracks().forEach(track => track.stop());
+        webcamStreamRef.current = null;
+      }
+      setWebcamEnabled(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (webcamRef.current) {
+          webcamRef.current.srcObject = stream;
+        }
+        webcamStreamRef.current = stream;
+        setWebcamEnabled(true);
+      } catch (err) {
+        console.error('Webcam error:', err);
+        alert('Could not access webcam. Please check permissions.');
+      }
+    }
+  };
+
   const repeatQuestion = async () => {
     if (!sessionId) return;
     try {
       const res = await axios.get(`${API_BASE}/repeat/${sessionId}`);
       const question = res.data.question;
       setCurrentQuestion(question);
-      setMessages((prev) => [...prev, { from: 'bot', text: question }]);
+      setMessages((prev) => [...prev, { from: 'bot', text: `🔁 ${question}` }]);
     } catch (err) {
       console.error(err);
     }
   };
 
   return (
-    <div className="chat-wrapper">
-      <div className="upload-bar">
-        <div>
-          <input type="file" accept="application/pdf" onChange={handleResumeChange} />
-          {resumeFile && <span className="file-pill">{resumeFile.name}</span>}
+    <div className="flex flex-col gap-4">
+      {/* Webcam Preview */}
+      <div className="relative w-full aspect-video bg-[#1c2127] rounded-xl border border-[#3b4754] shadow-2xl overflow-hidden">
+        {webcamEnabled ? (
+          <>
+            <video ref={webcamRef} autoPlay muted className="w-full h-full object-cover" />
+            <button
+              onClick={toggleWebcam}
+              className="absolute top-4 right-4 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-bold transition-colors flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-lg">videocam_off</span>
+              Disable Camera
+            </button>
+            {/* Live indicator */}
+            <div className="absolute top-4 left-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+              <span className="text-white text-xs font-medium">LIVE</span>
+            </div>
+          </>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1c2127] to-[#283039]">
+            <div className="text-center">
+              <span className="material-symbols-outlined text-[#9dabb9] text-6xl mb-4 block">videocam</span>
+              <p className="text-[#9dabb9] mb-4">Enable camera for video interview experience</p>
+              <button
+                onClick={toggleWebcam}
+                className="px-6 py-3 rounded-lg bg-primary hover:bg-blue-600 text-white font-bold transition-all shadow-[0_0_15px_rgba(19,127,236,0.4)] flex items-center gap-2 mx-auto"
+              >
+                <span className="material-symbols-outlined">videocam</span>
+                Enable Camera
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Upload Section */}
+      <div className="flex flex-col sm:flex-row gap-3 p-4 rounded-xl border-2 border-dashed border-[#3b4754] bg-[#1c2127] hover:border-primary/50 transition-colors">
+        <div className="flex-1">
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={handleResumeChange}
+            className="block w-full text-sm text-[#9dabb9] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-primary file:text-white hover:file:bg-blue-600 file:cursor-pointer file:transition-colors"
+          />
+          {resumeFile && (
+            <div className="mt-2 flex items-center gap-2 text-sm text-primary">
+              <span className="material-symbols-outlined text-lg">description</span>
+              <span className="font-medium">{resumeFile.name}</span>
+            </div>
+          )}
         </div>
-        <button onClick={startInterview} disabled={loading}>
-          {loading ? 'Processing…' : 'Upload & Start'}
+        <button
+          onClick={startInterview}
+          disabled={loading}
+          className="px-6 py-3 rounded-lg bg-primary hover:bg-blue-600 text-white font-bold transition-all shadow-[0_0_15px_rgba(19,127,236,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
+        >
+          {loading ? (
+            <>
+              <span className="material-symbols-outlined animate-spin">progress_activity</span>
+              Processing...
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined">rocket_launch</span>
+              Upload & Start
+            </>
+          )}
         </button>
       </div>
 
+      {/* Resume Summary */}
       {summary && (
-        <div className="summary-box">
-          <div className="summary-title">Resume summary</div>
-          <p>{summary}</p>
+        <div className="p-4 rounded-xl border border-[#3b4754] bg-[#1c2127]">
+          <h3 className="text-primary text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined">description</span>
+            Resume Summary
+          </h3>
+          <p className="text-[#9dabb9] text-sm leading-relaxed">{summary}</p>
         </div>
       )}
 
-      <div className="controls-bar">
-        <button onClick={repeatQuestion} disabled={!sessionId}>Repeat question</button>
-        <button onClick={() => speakOut(currentQuestion)} disabled={!currentQuestion}>
-          Play question
+      {/* Controls */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={repeatQuestion}
+          disabled={!sessionId}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#3b4754] bg-[#1c2127] text-white hover:bg-[#283039] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+        >
+          <span className="material-symbols-outlined text-lg">replay</span>
+          Repeat
         </button>
-        <button onClick={recording ? stopRecording : startRecording} disabled={loading}>
-          {recording ? 'Stop recording' : 'Record answer (voice)'}
+        <button
+          onClick={() => speakOut(currentQuestion)}
+          disabled={!currentQuestion}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#3b4754] bg-[#1c2127] text-white hover:bg-[#283039] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+        >
+          <span className="material-symbols-outlined text-lg">volume_up</span>
+          Play
         </button>
-        {recording && <span className="recording-dot">● Recording</span>}
+        <button
+          onClick={recording ? stopRecording : startRecording}
+          disabled={loading}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${recording
+              ? 'border-red-500 bg-red-500/20 text-red-400 hover:bg-red-500/30'
+              : 'border-[#3b4754] bg-[#1c2127] text-white hover:bg-[#283039]'
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
+        >
+          <span className="material-symbols-outlined text-lg">{recording ? 'stop_circle' : 'mic'}</span>
+          {recording ? 'Stop Recording' : 'Record'}
+        </button>
+        {recording && (
+          <div className="flex items-center gap-2 px-3 py-2 text-red-400 text-sm font-medium animate-pulse">
+            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            Recording...
+          </div>
+        )}
       </div>
 
-      <div className="chat-container">
-        <div className="chat-window">
+      {/* Chat Container */}
+      <div className="flex flex-col bg-[#1c2127] border border-[#3b4754] rounded-xl overflow-hidden shadow-lg h-[500px]">
+        {/* Messages */}
+        <div className="flex-1 p-4 overflow-y-auto space-y-3">
           {messages.map((m, i) => (
-            <div key={i} className={`msg ${m.from === 'user' ? 'user' : 'bot'}`}>
-              {m.text}
+            <div key={i} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[80%] px-4 py-3 rounded-xl text-sm leading-relaxed ${m.from === 'user'
+                  ? 'bg-primary text-white rounded-br-sm'
+                  : 'bg-[#283039] text-[#e2e8f0] rounded-bl-sm border border-[#3b4754]'
+                }`}>
+                {m.text}
+              </div>
             </div>
           ))}
-          {loading && <div className="msg bot">Thinking...</div>}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-[#283039] text-[#9dabb9] px-4 py-3 rounded-xl rounded-bl-sm border border-[#3b4754] flex items-center gap-2">
+                <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>
+                Thinking...
+              </div>
+            </div>
+          )}
           <div ref={chatEndRef} />
         </div>
 
-        <form onSubmit={handleSubmit} className="chat-input">
+        {/* Input */}
+        <form onSubmit={handleSubmit} className="border-t border-[#3b4754] bg-[#111418] flex">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Speak or type your answer..."
+            placeholder="Type your answer or use voice recording..."
+            className="flex-1 px-4 py-4 bg-transparent border-none outline-none text-white placeholder-[#9dabb9] text-sm"
           />
-          <button type="submit" disabled={loading || !sessionId}>
-            Send
+          <button
+            type="submit"
+            disabled={loading || !sessionId}
+            className="px-6 bg-primary hover:bg-blue-600 text-white font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined">send</span>
           </button>
         </form>
       </div>

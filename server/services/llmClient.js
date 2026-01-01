@@ -54,3 +54,29 @@ export async function transcribeAudio(buffer, filename = 'audio.webm') {
     throw err;
   }
 }
+
+/**
+ * Generate speech audio from text using Azure OpenAI TTS
+ * @param {string} text - Text to convert to speech
+ * @param {string} voice - Voice to use (alloy, echo, fable, onyx, nova, shimmer)
+ * @returns {Promise<Buffer>} Audio buffer
+ */
+export async function generateSpeech(text, voice = 'nova') {
+  try {
+    const response = await chatClient.audio.speech.create({
+      model: 'tts-1', // Azure OpenAI TTS model
+      voice: voice, // Options: alloy, echo, fable, onyx, nova, shimmer
+      input: text,
+      response_format: 'mp3',
+      speed: 1.0,
+    });
+
+    // Convert response to buffer
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return buffer;
+  } catch (err) {
+    console.error('generateSpeech Azure error:', err.response?.data || err.message || err);
+    throw err;
+  }
+}
+

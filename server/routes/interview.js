@@ -4,10 +4,23 @@ import pdfParse from 'pdf-parse';
 import { randomUUID } from 'crypto';
 import { askLLM, transcribeAudio } from '../services/llmClient.js';
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max for PDF
+  },
+});
+
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max for audio
+  },
+});
+
 const router = express.Router();
 
-// In-memory session store for MVP. Replace with Redis/DB for production.
+// Simple in-memory session storage (resets on server restart)
 const sessions = new Map();
 
 const MAX_RESUME_CHARS = 12000;
@@ -38,13 +51,15 @@ async function nextQuestion(session, answer) {
   return question;
 }
 
+// Upload resume and start interview
 router.post('/resume', upload.single('resume'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'resume file is required' });
+      return res.status(400).json({ error: 'Resume file is required' });
     }
+
     if (req.file.mimetype !== 'application/pdf') {
-      return res.status(400).json({ error: 'Only PDF resumes are accepted for now.' });
+      return res.status(400).json({ error: 'Only PDF resumes are accepted' });
     }
 
     const pdfData = await pdfParse(req.file.buffer);
@@ -68,19 +83,28 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
 
     res.json({ sessionId, summary, question: initialQuestion });
   } catch (err) {
-    console.error('resume upload error:', err);
+    console.error('Resume upload error:', err);
     res.status(500).json({ error: err.message || 'Failed to process resume' });
   }
 });
 
+// Submit text answer
 router.post('/answer', async (req, res) => {
   try {
     const { sessionId, answer } = req.body;
-    if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
-    if (!answer) return res.status(400).json({ error: 'answer is required' });
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+
+    if (!answer || answer.trim().length === 0) {
+      return res.status(400).json({ error: 'Answer is required' });
+    }
 
     const session = sessions.get(sessionId);
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
     const lastIndex = session.history.length - 1;
     session.history[lastIndex].answer = answer;
@@ -91,24 +115,33 @@ router.post('/answer', async (req, res) => {
     const done = question.trim().toLowerCase() === 'end of interview.';
     res.json({ question, done });
   } catch (err) {
-    console.error('answer route error:', err);
+    console.error('Answer error:', err);
     res.status(500).json({ error: err.message || 'Failed to generate next question' });
   }
 });
 
-router.post('/answer-audio', upload.single('audio'), async (req, res) => {
+// Submit audio answer
+router.post('/answer-audio', audioUpload.single('audio'), async (req, res) => {
   try {
     const { sessionId } = req.body;
-    if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
-    if (!req.file) return res.status(400).json({ error: 'audio file is required' });
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Audio file is required' });
+    }
 
     const allowed = ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4'];
     if (req.file.mimetype && !allowed.includes(req.file.mimetype)) {
-      return res.status(400).json({ error: 'Unsupported audio type. Use webm/ogg/mpeg.' });
+      return res.status(400).json({ error: 'Unsupported audio format. Use webm, ogg, mpeg, or mp4' });
     }
 
     const session = sessions.get(sessionId);
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
     const transcript = await transcribeAudio(req.file.buffer, req.file.originalname || 'audio.webm');
 
@@ -121,16 +154,47 @@ router.post('/answer-audio', upload.single('audio'), async (req, res) => {
     const done = question.trim().toLowerCase() === 'end of interview.';
     res.json({ question, done, transcript });
   } catch (err) {
-    console.error('answer-audio route error:', err);
+    console.error('Audio answer error:', err);
     res.status(500).json({ error: err.message || 'Failed to transcribe or generate next question' });
   }
 });
 
+// Repeat last question
 router.get('/repeat/:sessionId', (req, res) => {
   const session = sessions.get(req.params.sessionId);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
   const lastQuestion = session.history.at(-1)?.question;
   res.json({ question: lastQuestion });
 });
 
+// Generate speech audio for question (TTS)
+router.post('/tts', async (req, res) => {
+  try {
+    const { text, voice = 'nova' } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    // Import generateSpeech function
+    const { generateSpeech } = await import('../services/llmClient.js');
+
+    const audioBuffer = await generateSpeech(text, voice);
+
+    // Set headers for audio streaming
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': audioBuffer.length,
+    });
+
+    res.send(audioBuffer);
+  } catch (err) {
+    console.error('TTS error:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate speech' });
+  }
+});
+
 export default router;
+

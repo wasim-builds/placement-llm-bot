@@ -12,7 +12,9 @@ frontend/.eslintcache
 
 # Env
 .env
-.env.*
+.env.local
+.env.*.local
+!.env.example
 
 # Logs
 npm-debug.log*
