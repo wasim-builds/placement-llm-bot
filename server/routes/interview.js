@@ -3,6 +3,7 @@ import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { randomUUID } from 'crypto';
 import { askLLM, transcribeAudio } from '../services/llmClient.js';
+import db from '../services/database.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -54,6 +55,28 @@ async function nextQuestion(session, answer) {
 // Upload resume and start interview
 router.post('/resume', upload.single('resume'), async (req, res) => {
   try {
+    const { jobId: rawJobId, applicationId: rawApplicationId } = req.body;
+
+    if (!rawApplicationId) {
+      return res.status(400).json({ error: 'Application ID is required' });
+    }
+
+    const applicationId = parseInt(rawApplicationId, 10);
+    if (Number.isNaN(applicationId)) {
+      return res.status(400).json({ error: 'Application ID must be a number' });
+    }
+
+    const jobId = rawJobId ? parseInt(rawJobId, 10) : null;
+
+    const application = db.getApplicationById(applicationId);
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    if (jobId && application.jobId !== jobId) {
+      return res.status(400).json({ error: 'Application does not belong to the provided job' });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'Resume file is required' });
     }
@@ -73,6 +96,8 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
     const sessionId = randomUUID();
     sessions.set(sessionId, {
       summary,
+      jobId: jobId || application.jobId,
+      applicationId,
       history: [
         {
           question: initialQuestion,
@@ -156,6 +181,60 @@ router.post('/answer-audio', audioUpload.single('audio'), async (req, res) => {
   } catch (err) {
     console.error('Audio answer error:', err);
     res.status(500).json({ error: err.message || 'Failed to transcribe or generate next question' });
+  }
+});
+
+// Save interview result (scores/transcript) for a session
+router.post('/result', async (req, res) => {
+  try {
+    const { sessionId, applicationId: rawApplicationId, jobId: rawJobId, transcript, scores, overallScore } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+
+    if (!rawApplicationId) {
+      return res.status(400).json({ error: 'Application ID is required' });
+    }
+
+    const applicationId = parseInt(rawApplicationId, 10);
+    if (Number.isNaN(applicationId)) {
+      return res.status(400).json({ error: 'Application ID must be a number' });
+    }
+
+    const jobId = rawJobId ? parseInt(rawJobId, 10) : null;
+
+    const application = db.getApplicationById(applicationId);
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    if (jobId && application.jobId !== jobId) {
+      return res.status(400).json({ error: 'Application does not belong to the provided job' });
+    }
+
+    const session = sessions.get(sessionId);
+
+    const transcriptText = transcript
+      || (session?.history
+        ? session.history
+            .map((item, idx) => `Q${idx + 1}: ${item.question}\nA${idx + 1}: ${item.answer || 'no answer provided'}`)
+            .join('\n')
+        : '');
+
+    const result = db.createInterviewResult({
+      applicationId,
+      jobId: jobId || application.jobId,
+      sessionId,
+      scores: scores || {},
+      transcript: transcriptText ? [transcriptText] : [],
+      overallScore: typeof overallScore === 'number' ? overallScore : 0,
+    });
+
+    res.json({ message: 'Interview result saved', result });
+  } catch (err) {
+    console.error('Interview result error:', err);
+    res.status(500).json({ error: err.message || 'Failed to save interview result' });
   }
 });
 

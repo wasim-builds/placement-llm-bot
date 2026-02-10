@@ -1,16 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import SilenceDetector from '../services/silenceDetector';
 import VideoRecorder from '../services/videoRecorder';
 
 const API_BASE = 'http://localhost:5001/api/interview';
+const VIDEO_API_BASE = 'http://localhost:5001/api/videos';
 
 export default function InterviewRoom() {
+    const { jobId: jobIdParam, applicationId: applicationIdParam } = useParams();
+
     // Interview state
     const [interviewState, setInterviewState] = useState('setup'); // setup | active | completed
     const [sessionId, setSessionId] = useState('');
     const [resumeFile, setResumeFile] = useState(null);
     const [resumeSummary, setResumeSummary] = useState('');
+    const [jobId] = useState(jobIdParam || '');
+    const [applicationId] = useState(applicationIdParam || '');
 
     // Question state
     const [currentQuestion, setCurrentQuestion] = useState('');
@@ -21,6 +27,15 @@ export default function InterviewRoom() {
     const [isRecording, setIsRecording] = useState(false);
     const [silenceCountdown, setSilenceCountdown] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [uploadingVideo, setUploadingVideo] = useState(false);
+    const [toast, setToast] = useState(null); // { type: 'success' | 'error', message: string }
+
+    // Auto-hide toast after a short delay
+    useEffect(() => {
+        if (!toast) return;
+        const timer = setTimeout(() => setToast(null), 4000);
+        return () => clearTimeout(timer);
+    }, [toast]);
 
     // Media refs
     const webcamRef = useRef(null);
@@ -28,6 +43,7 @@ export default function InterviewRoom() {
     const audioStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
+    const lastVideoBlobRef = useRef(null);
 
     // Service refs
     const silenceDetectorRef = useRef(null);
@@ -40,6 +56,19 @@ export default function InterviewRoom() {
             stopAllMedia();
         };
     }, []);
+
+    // Warn before closing tab while upload is in progress
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (uploadingVideo) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [uploadingVideo]);
 
     // Auto-speak questions using AI voice
     useEffect(() => {
@@ -127,12 +156,19 @@ export default function InterviewRoom() {
             return;
         }
 
+        if (!applicationId) {
+            alert('Please start the interview from an application so we can attach your recording.');
+            return;
+        }
+
         setLoading(true);
 
         try {
             // 1. Upload resume and get first question
             const formData = new FormData();
             formData.append('resume', resumeFile);
+            formData.append('jobId', jobId);
+            formData.append('applicationId', applicationId);
 
             const res = await axios.post(`${API_BASE}/resume`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
@@ -386,10 +422,19 @@ export default function InterviewRoom() {
             try {
                 const videoBlob = await videoRecorderRef.current.stop();
                 VideoRecorder.downloadVideo(videoBlob, `interview-${sessionId}.webm`);
+
+                // Preserve blob for retry in case upload fails
+                lastVideoBlobRef.current = videoBlob;
+
+                // Upload to backend so HR can review
+                await uploadInterviewVideo(videoBlob);
             } catch (err) {
                 console.error('Failed to save video:', err);
             }
         }
+
+        // Submit transcript/result metadata (best-effort)
+        await submitInterviewResult();
 
         // Stop all media
         stopAllMedia();
@@ -399,6 +444,64 @@ export default function InterviewRoom() {
             ...prev,
             { from: 'bot', text: '🎉 Interview completed! Your video has been downloaded.' }
         ]);
+    };
+
+    /**
+     * Upload recorded interview video and attach to application
+     */
+    const uploadInterviewVideo = async (videoBlob) => {
+        if (!applicationId || !videoBlob) return;
+
+        setUploadingVideo(true);
+
+        try {
+            const formData = new FormData();
+            formData.append('video', videoBlob, `interview-${applicationId}.webm`);
+            formData.append('applicationId', applicationId);
+            if (jobId) {
+                formData.append('jobId', jobId);
+            }
+
+            await axios.post(`${VIDEO_API_BASE}/upload`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+
+            setToast({ type: 'success', message: 'Recording uploaded for review.' });
+        } catch (err) {
+            console.error('Failed to upload video:', err);
+            setToast({ type: 'error', message: 'Video upload failed. Retry from your applications page.' });
+        } finally {
+            setUploadingVideo(false);
+        }
+    };
+
+    const retryUpload = async () => {
+        if (uploadingVideo) return;
+        const blob = lastVideoBlobRef.current;
+        if (!blob) return;
+        await uploadInterviewVideo(blob);
+    };
+
+    const submitInterviewResult = async () => {
+        if (!sessionId || !applicationId) return;
+
+        try {
+            const transcript = messages
+                .map(m => `${m.from}: ${m.text}`)
+                .join('\n');
+
+            await axios.post(`${API_BASE}/result`, {
+                sessionId,
+                jobId,
+                applicationId,
+                transcript,
+            });
+
+            setToast({ type: 'success', message: 'Interview summary sent for review.' });
+        } catch (err) {
+            console.error('Failed to submit interview result:', err);
+            setToast({ type: 'error', message: 'Could not submit results. Please retry later.' });
+        }
     };
 
     /**
@@ -580,6 +683,14 @@ export default function InterviewRoom() {
                             </div>
                         )}
 
+                        {/* Video Upload Indicator */}
+                        {uploadingVideo && (
+                            <div className="flex items-center gap-3 text-sky-300">
+                                <span className="material-symbols-outlined animate-spin">cloud_upload</span>
+                                <span className="text-lg">Uploading your recording...</span>
+                            </div>
+                        )}
+
                         {/* Recording Indicator */}
                         {isRecording && !loading && (
                             <div className="flex items-center gap-3 text-green-400">
@@ -591,6 +702,33 @@ export default function InterviewRoom() {
                 </div>
             </div>
 
+            {/* Toast */}
+            {toast && (
+                <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg backdrop-blur-md border flex items-center gap-3 ${toast.type === 'success'
+                    ? 'bg-green-500/15 border-green-500/40 text-green-200'
+                    : 'bg-red-500/15 border-red-500/40 text-red-200'
+                }`}>
+                    <span className="material-symbols-outlined">
+                        {toast.type === 'success' ? 'check_circle' : 'error'}
+                    </span>
+                    <span className="text-sm font-medium">{toast.message}</span>
+                    {toast.type === 'error' && lastVideoBlobRef.current && !uploadingVideo && (
+                        <button
+                            onClick={retryUpload}
+                            className="ml-2 text-xs uppercase tracking-wide opacity-80 hover:opacity-100 underline"
+                        >
+                            Retry
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setToast(null)}
+                        className="ml-2 text-xs uppercase tracking-wide opacity-80 hover:opacity-100"
+                    >
+                        Close
+                    </button>
+                </div>
+            )}
+
             {/* Interview Completed Screen */}
             {interviewState === 'completed' && (
                 <div className="absolute inset-0 bg-black/95 flex items-center justify-center p-6">
@@ -601,15 +739,23 @@ export default function InterviewRoom() {
                         <h2 className="text-4xl font-bold text-white mb-4">
                             Interview Completed!
                         </h2>
-                        <p className="text-slate-300 text-lg mb-8">
-                            Your interview recording has been saved. Thank you for participating!
+                        <p className="text-slate-300 text-lg mb-4">
+                            {uploadingVideo
+                                ? 'We are uploading your recording. Please keep this tab open.'
+                                : 'Your interview recording has been saved. Thank you for participating!'}
                         </p>
+                        {!uploadingVideo && (
+                            <p className="text-slate-400 text-sm mb-8">
+                                You can review your video later from your applications page.
+                            </p>
+                        )}
                         <button
                             onClick={resetInterview}
-                            className="px-8 py-4 rounded-lg bg-primary hover:bg-blue-600 text-white font-bold text-lg transition-all shadow-[0_0_20px_rgba(19,127,236,0.4)] flex items-center gap-3 mx-auto"
+                            disabled={uploadingVideo}
+                            className="px-8 py-4 rounded-lg bg-primary hover:bg-blue-600 text-white font-bold text-lg transition-all shadow-[0_0_20px_rgba(19,127,236,0.4)] flex items-center gap-3 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span className="material-symbols-outlined">refresh</span>
-                            Start New Interview
+                            {uploadingVideo ? 'Uploading...' : 'Start New Interview'}
                         </button>
                     </div>
                 </div>
