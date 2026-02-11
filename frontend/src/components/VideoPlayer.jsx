@@ -4,7 +4,7 @@ export default function VideoPlayer({ applicationId, onClose }) {
     const videoRef = useRef(null);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
 
-    const videoUrl = `http://localhost:5001/api/videos/${applicationId}`;
+    const videoUrl = `http://localhost:5002/api/videos/${applicationId}`;
 
     const handleSpeedChange = (speed) => {
         if (videoRef.current) {
@@ -14,7 +14,7 @@ export default function VideoPlayer({ applicationId, onClose }) {
     };
 
     const handleDownload = () => {
-        window.open(`http://localhost:5001/api/videos/${applicationId}/download`, '_blank');
+        window.open(`http://localhost:5002/api/videos/${applicationId}/download`, '_blank');
     };
 
     return (

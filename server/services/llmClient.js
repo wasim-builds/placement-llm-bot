@@ -3,7 +3,13 @@ import OpenAI from 'openai';
 
 dotenv.config();
 
+// Check if Azure OpenAI is configured
+const isAzureConfigured = process.env.AZURE_OPENAI_KEY && process.env.AZURE_OPENAI_ENDPOINT;
+
 function makeClient(deployment) {
+  if (!isAzureConfigured) {
+    return null;
+  }
   return new OpenAI({
     apiKey: process.env.AZURE_OPENAI_KEY,
     baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${deployment}`,
@@ -12,14 +18,24 @@ function makeClient(deployment) {
   });
 }
 
-const chatClient = makeClient(process.env.AZURE_OPENAI_DEPLOYMENT);
+const chatClient = isAzureConfigured ? makeClient(process.env.AZURE_OPENAI_DEPLOYMENT) : null;
 const whisperDeployment = process.env.AZURE_OPENAI_WHISPER_DEPLOYMENT;
-const whisperClient = whisperDeployment ? makeClient(whisperDeployment) : null;
+const whisperClient = whisperDeployment && isAzureConfigured ? makeClient(whisperDeployment) : null;
+
+// Log warning if not configured
+if (!isAzureConfigured) {
+  console.warn('⚠️  Azure OpenAI not configured. LLM features will return mock responses.');
+  console.warn('   Set AZURE_OPENAI_KEY and AZURE_OPENAI_ENDPOINT in .env file.');
+}
 
 export async function askLLM(
   message,
   context = 'You are a helpful interview-prep assistant.'
 ) {
+  if (!chatClient) {
+    // Return mock response when Azure is not configured
+    return 'This is a mock response. Configure Azure OpenAI for real AI responses.';
+  }
   try {
     const completion = await chatClient.chat.completions.create({
       model: process.env.AZURE_OPENAI_DEPLOYMENT,
@@ -62,6 +78,9 @@ export async function transcribeAudio(buffer, filename = 'audio.webm') {
  * @returns {Promise<Buffer>} Audio buffer
  */
 export async function generateSpeech(text, voice = 'nova') {
+  if (!chatClient) {
+    throw new Error('Azure OpenAI not configured for TTS');
+  }
   try {
     const response = await chatClient.audio.speech.create({
       model: 'tts-1', // Azure OpenAI TTS model

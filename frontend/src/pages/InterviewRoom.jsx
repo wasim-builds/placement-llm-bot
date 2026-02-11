@@ -3,9 +3,10 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import SilenceDetector from '../services/silenceDetector';
 import VideoRecorder from '../services/videoRecorder';
+import { API_INTERVIEW_URL, API_VIDEOS_URL } from '../config/api';
 
-const API_BASE = 'http://localhost:5001/api/interview';
-const VIDEO_API_BASE = 'http://localhost:5001/api/videos';
+const API_BASE = API_INTERVIEW_URL;
+const VIDEO_API_BASE = API_VIDEOS_URL;
 
 export default function InterviewRoom() {
     const { jobId: jobIdParam, applicationId: applicationIdParam } = useParams();
@@ -707,7 +708,7 @@ export default function InterviewRoom() {
                 <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg backdrop-blur-md border flex items-center gap-3 ${toast.type === 'success'
                     ? 'bg-green-500/15 border-green-500/40 text-green-200'
                     : 'bg-red-500/15 border-red-500/40 text-red-200'
-                }`}>
+                    }`}>
                     <span className="material-symbols-outlined">
                         {toast.type === 'success' ? 'check_circle' : 'error'}
                     </span>

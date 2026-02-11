@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:5001/api/interview';
+const API_BASE = 'http://localhost:5002/api/interview';
 
 export default function ChatBot() {
   const [resumeFile, setResumeFile] = useState(null);

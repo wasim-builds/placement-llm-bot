@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import VideoPlayer from '../components/VideoPlayer';
 
-const API_BASE = 'http://localhost:5001/api';
+const API_BASE = 'http://localhost:5002/api';
 
 export default function ApplicationsView() {
     const { jobId } = useParams();
@@ -118,7 +118,7 @@ export default function ApplicationsView() {
                             {/* Actions */}
                             <div className="flex flex-wrap gap-3">
                                 <a
-                                    href={`http://localhost:5001${app.resumeUrl}`}
+                                    href={`http://localhost:5002${app.resumeUrl}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="glass-light border border-primary/30 hover:border-primary text-slate-300 hover:text-primary font-medium py-2 px-4 rounded-lg hover-glow transition-smooth flex items-center gap-2"
