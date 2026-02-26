@@ -157,11 +157,6 @@ export default function InterviewRoom() {
             return;
         }
 
-        if (!applicationId) {
-            alert('Please start the interview from an application so we can attach your recording.');
-            return;
-        }
-
         setLoading(true);
 
         try {
@@ -553,6 +548,24 @@ export default function InterviewRoom() {
 
     // Render setup screen
     if (interviewState === 'setup') {
+        if (!applicationId) {
+            return (
+                <div className="p-6 md:p-10 max-w-4xl mx-auto text-center h-[70vh] flex flex-col items-center justify-center">
+                    <span className="material-symbols-outlined text-gray-500 text-6xl mb-4">work_history</span>
+                    <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
+                        Select an Application
+                    </h1>
+                    <p className="text-slate-400 text-lg mb-8 max-w-xl mx-auto">
+                        Your interview recordings need to be attached to a specific job application. Please go to your applications and start the interview from there.
+                    </p>
+                    <a href="/my-applications" className="px-8 py-3 rounded-lg bg-primary hover:bg-blue-600 text-white font-bold text-lg transition-all shadow-[0_0_20px_rgba(19,127,236,0.4)] inline-flex items-center gap-2">
+                        <span className="material-symbols-outlined">description</span>
+                        Go to My Applications
+                    </a>
+                </div>
+            );
+        }
+
         return (
             <div className="p-6 md:p-10 max-w-4xl mx-auto">
                 <div className="text-center mb-8">
