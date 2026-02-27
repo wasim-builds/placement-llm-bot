@@ -2,6 +2,10 @@
 
 Placement prep assistant with a Vite/React frontend and an Express backend powered by Azure OpenAI. Upload a resume (PDF), chat, and run mock interviews (text or audio) in one place.
 
+## Screenshots
+![HR Dashboard Mockup](assets/dashboard_mockup.png)
+![Interview Room Mockup](assets/interview_room.png)
+
 ## Requirements
 - Node.js 18+
 - npm
